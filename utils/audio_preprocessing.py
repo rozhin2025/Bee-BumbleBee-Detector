@@ -18,7 +18,7 @@ def segmentation(audio, sr=22050, frame_length=None, hop_length=None):
     return librosa.util.frame(audio, frame_length=frame_length, hop_length=hop_length, writeable=True).T
 
 
-def normalize(audio_segment, norm=np.inf):
+def normalize(audio_segment, norm=2):
     '''
     Parameters:
     audio_segment: audio data
