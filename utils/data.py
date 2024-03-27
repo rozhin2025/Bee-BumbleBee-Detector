@@ -172,5 +172,115 @@ def create_dataset_from_annotations(annotations=None, files=None, sr=None, frame
     y = annotations[annotations.is_selected].is_bee.values
     return x, y, annotations
 
+
+def compute_specs(rec_path, frame_length, hop_length, sr):
+    '''
+    Compute the spectrograms for a recording.
+    rec_path: Path object, the path to the recording file.
+    frame_length: int, the length of the frames.
+    hop_length: int, the hop length.    
+    sr: int, the sampling rate.
+    return: tuple of numpy arrays, the recording, the spectrogram, the mel spectrogram, the phase and the times in samples.
+    '''
+    rec, _ = librosa.load(rec_path, sr=sr)
+    S, phase = librosa.magphase(librosa.stft(rec, n_fft=frame_length, hop_length=hop_length, center=False))
+    S_mel = librosa.feature.melspectrogram(S=S, sr=sr)
+    times_samples = librosa.frames_to_samples(np.arange(S.shape[1]), hop_length=hop_length, n_fft=frame_length)
+    times_samples -= times_samples[0]
+    return rec, S, S_mel, phase, times_samples
+
+
+def extract_features(rec, S, S_mel, frame_length, hop_length, sr, valid_frames_indices=None, return_feat_indices=False):
+    '''
+    Extract the features from the recording.
+    rec: numpy array, the recording.
+    S: numpy array, the spectrogram.
+    S_mel: numpy array, the mel spectrogram.
+    frame_length: int, the length of the frames.
+    hop_length: int, the hop length.
+    sr: int, the sampling rate.
+    valid_frames_indices: numpy array, the indices of the valid frames.
+    return_feat_indices: bool, whether to return the feature indices.
+    return: tuple of numpy arrays, the features and the frames.
+    '''
+    
+    mfccs = librosa.feature.mfcc(S=librosa.power_to_db(S_mel), sr=sr)
+    flatness = librosa.feature.spectral_flatness(S=S, power=2)
+    spectral_centroid = librosa.feature.spectral_centroid(S=S, sr=sr)
+    spectral_rolloff = librosa.feature.spectral_rolloff(S=S, sr=sr)
+    spectral_contrast = librosa.feature.spectral_contrast(S=S, sr=sr)
+    chroma = librosa.feature.chroma_stft(S=S, sr=sr)
+    zero_crossing_rate = librosa.feature.zero_crossing_rate(rec, frame_length=frame_length, hop_length=hop_length, center=False)
+    if valid_frames_indices is not None:
+        zero_crossing_rate = zero_crossing_rate[:, valid_frames_indices]
+    
+    cqt = librosa.cqt(np.pad(rec, (frame_length//2, frame_length//2)), sr=sr, hop_length=hop_length)
+    frames_per_pad = (cqt.shape[1] - S.shape[1]) // 2
+    cqt = np.abs(cqt)[:, frames_per_pad:-frames_per_pad]
+    if valid_frames_indices is not None:
+        cqt = cqt[:, valid_frames_indices]
+    
+    features = np.concatenate([cqt, mfccs, flatness, spectral_centroid, spectral_rolloff, spectral_contrast, zero_crossing_rate, chroma, S], axis=0).T
+    feat_indices = {
+        'cqt': np.arange(cqt.shape[0]),
+        'mfccs': np.arange(cqt.shape[0], cqt.shape[0]+mfccs.shape[0]),
+        'flatness': np.arange(cqt.shape[0]+mfccs.shape[0], cqt.shape[0]+mfccs.shape[0]+flatness.shape[0]),
+        'spectral_centroid': np.arange(cqt.shape[0]+mfccs.shape[0]+flatness.shape[0], cqt.shape[0]+mfccs.shape[0]+flatness.shape[0]+spectral_centroid.shape[0]),
+        'spectral_rolloff': np.arange(cqt.shape[0]+mfccs.shape[0]+flatness.shape[0]+spectral_centroid.shape[0], cqt.shape[0]+mfccs.shape[0]+flatness.shape[0]+spectral_centroid.shape[0]+spectral_rolloff.shape[0]),
+        'spectral_contrast': np.arange(cqt.shape[0]+mfccs.shape[0]+flatness.shape[0]+spectral_centroid.shape[0]+spectral_rolloff.shape[0], cqt.shape[0]+mfccs.shape[0]+flatness.shape[0]+spectral_centroid.shape[0]+spectral_rolloff.shape[0]+spectral_contrast.shape[0]),
+        'zero_crossing_rate': np.arange(cqt.shape[0]+mfccs.shape[0]+flatness.shape[0]+spectral_centroid.shape[0]+spectral_rolloff.shape[0]+spectral_contrast.shape[0], cqt.shape[0]+mfccs.shape[0]+flatness.shape[0]+spectral_centroid.shape[0]+spectral_rolloff.shape[0]+spectral_contrast.shape[0]+zero_crossing_rate.shape[0]),
+        'chroma': np.arange(cqt.shape[0]+mfccs.shape[0]+flatness.shape[0]+spectral_centroid.shape[0]+spectral_rolloff.shape[0]+spectral_contrast.shape[0]+zero_crossing_rate.shape[0], cqt.shape[0]+mfccs.shape[0]+flatness.shape[0]+spectral_centroid.shape[0]+spectral_rolloff.shape[0]+spectral_contrast.shape[0]+zero_crossing_rate.shape[0]+chroma.shape[0]),
+        'STFT': np.arange(cqt.shape[0]+mfccs.shape[0]+flatness.shape[0]+spectral_centroid.shape[0]+spectral_rolloff.shape[0]+spectral_contrast.shape[0]+zero_crossing_rate.shape[0]+chroma.shape[0], cqt.shape[0]+mfccs.shape[0]+flatness.shape[0]+spectral_centroid.shape[0]+spectral_rolloff.shape[0]+spectral_contrast.shape[0]+zero_crossing_rate.shape[0]+chroma.shape[0]+S.shape[0])
+    }
+    if return_feat_indices:
+        return features, feat_indices
+    return features
+
+
+def create_features_dataset_from_annotations(annotations=None, sr=None, frame_length=None, hop_length=None):
+    '''
+    Create a dataset from multiple recording files.
+    annotations: pandas DataFrame, the annotations.
+    sr: int, the sampling rate.
+    frame_length: int, the length of the frames.
+    hop_length: int, the hop length.
+    return: tuple of numpy arrays, the input and output tensors and the annotations.
+    '''
+    
+    frame_length += frame_length % 2 # make sure frame_length is even
+    annotations_grouped_by_rec = annotations.groupby('recording')
+    recordings = list(annotations.recording.unique())
+    
+    dataset_data, dataset_labels = [], []
+    def load_selected_samples(rec_path):
+        rec_annotations = annotations_grouped_by_rec.get_group(rec_path)
+        rec, S, S_mel, _, _ = compute_specs(rec_path, frame_length, hop_length, sr)
+        features, feat_indices = extract_features(rec, S, S_mel, frame_length, hop_length, sr, return_feat_indices=True)
+        selected_indices = np.sort(rec_annotations[rec_annotations.is_selected].sample_idx.values)
+        normalized_features = normalize_by_feature(features[selected_indices, :], feat_indices)
+        normalized_features = np.round(normalized_features, 5)
+        normalized_features = normalized_features.astype(np.float32)
+        dataset_data.append(normalized_features)
+        dataset_labels.append(rec_annotations[rec_annotations.is_selected].is_bee.values)
+        return feat_indices
+    feat_indices = list(map(load_selected_samples, recordings))[0]
+    dataset_data = np.concatenate(dataset_data, axis=0)
+    dataset_labels = np.concatenate(dataset_labels, axis=0)
+    
+    return dataset_data, dataset_labels, feat_indices
+
+
+def normalize_by_feature(data, feat_indices):
+    '''
+    Normalize the data by feature.
+    data: numpy array, the data.
+    feat_indices: dict, the indices of the features.
+    return: numpy array, the normalized data.
+    '''
+    
+    for feat_name, feat_indices in feat_indices.items():
+        data[:, feat_indices] /= np.abs(data[:, feat_indices]).max(axis=0, keepdims=True)
+    return data
+
 if __name__ == "__main__":
     pass
