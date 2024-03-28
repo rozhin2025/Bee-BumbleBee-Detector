@@ -154,6 +154,8 @@ def create_dataset_from_annotations(annotations=None, files=None, sr=None, frame
     
     def load_selected_samples(rec_path):
         rec_annotations = annotations_grouped_by_rec.get_group(rec_path)
+        if type(rec_path) is str:
+            rec_path = rec_path.replace('\\', '/')
         x, _ = librosa.load(rec_path, sr=sr)
         x = segmentation(x, sr, frame_length, hop_length)
         selected_indices = np.sort(rec_annotations[rec_annotations.is_selected].sample_idx.values)
@@ -254,6 +256,8 @@ def create_features_dataset_from_annotations(annotations=None, sr=None, frame_le
     dataset_data, dataset_labels = [], []
     def load_selected_samples(rec_path):
         rec_annotations = annotations_grouped_by_rec.get_group(rec_path)
+        if type(rec_path) is str:
+            rec_path = rec_path.replace('\\', '/')
         rec, S, S_mel, _, _ = compute_specs(rec_path, frame_length, hop_length, sr)
         features, feat_indices = extract_features(rec, S, S_mel, frame_length, hop_length, sr, return_feat_indices=True)
         selected_indices = np.sort(rec_annotations[rec_annotations.is_selected].sample_idx.values)
