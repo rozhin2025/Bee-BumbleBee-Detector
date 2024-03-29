@@ -165,6 +165,7 @@ cython_debug/
 *.pkl
 *.h5
 *.wav
+*.json
 
 all_training_data/*
 bioacoustics/*
