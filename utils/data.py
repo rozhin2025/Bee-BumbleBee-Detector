@@ -137,7 +137,7 @@ def create_dataset_annotations(files, sr, frame_length, hop_length, balancing=Tr
     return annotations
 
 
-def create_dataset_from_annotations(annotations=None, files=None, sr=None, frame_length=None, hop_length=None, balancing=True, exclude_noisybee=True, bee_fraction_threshold=1, random_seed=13):
+def create_dataset_from_annotations(annotations=None, files=None, sr=None, frame_length=None, hop_length=None, balancing=True, exclude_noisybee=True, bee_fraction_threshold=1, random_seed=13, preprocessing_fn=None):
     '''
     Create a dataset from multiple recording files.
     annotations: pandas DataFrame, the annotations.
@@ -160,6 +160,8 @@ def create_dataset_from_annotations(annotations=None, files=None, sr=None, frame
         x = segmentation(x, sr, frame_length, hop_length)
         selected_indices = np.sort(rec_annotations[rec_annotations.is_selected].sample_idx.values)
         x = x[selected_indices, ...]
+        if preprocessing_fn is not None:
+            x = preprocessing_fn(x)
         x = normalize(x)
         return x
     
