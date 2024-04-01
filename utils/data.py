@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import librosa
 from .audio_preprocessing import segmentation, normalize
+from scipy.signal import butter, filtfilt
 
 def train_test_split_by_bee(rec_paths, test_size=0.3, exclude_noisy_bee=True, random_state=None):
     '''
@@ -288,6 +289,81 @@ def normalize_by_feature(data, feat_indices):
     for feat_name, feat_indices in feat_indices.items():
         data[:, feat_indices] /= np.abs(data[:, feat_indices]).max(axis=0, keepdims=True)
     return data
+
+
+def generate_noise(noise_type, num_samples, fs=44100):
+    """
+    Generate different types of noise.
+
+    Parameters:
+    noise_type (str): Type of noise to generate ('white', 'pink', 'brown', 'blue', 'violet', 'grey').
+    num_samples (int): Number of samples of the noise.
+    fs (int): Sampling frequency, default is 44100 Hz.
+
+    Returns:
+    np.ndarray: Array containing the generated noise.
+    """
+
+    # Generate white noise
+    noise = np.random.normal(0, 1, num_samples)
+
+    if noise_type == 'white':
+        return noise
+
+    elif noise_type in ['pink', 'brown', 'blue', 'violet']:
+        # Creating a filter for the specific noise color
+        if noise_type == 'pink':
+            b, a = butter(1, [1], btype='low', fs=fs)
+        elif noise_type == 'brown':
+            b, a = butter(1, [1], btype='low', fs=fs, output='ba')
+        elif noise_type == 'blue':
+            b, a = butter(1, [1], btype='high', fs=fs)
+        elif noise_type == 'violet':
+            b, a = butter(2, [1], btype='high', fs=fs)
+
+        # Applying the filter to the white noise
+        colored_noise = filtfilt(b, a, noise)
+        return colored_noise
+
+    elif noise_type == 'grey':
+        # Grey noise generation (approximate)
+        freqs = np.fft.rfftfreq(num_samples, d=1/fs)
+        factors = np.sqrt(1 / (freqs + 1e-10)) # Avoid division by zero
+        grey_noise = np.fft.irfft(np.fft.rfft(noise) * factors)
+        return grey_noise
+
+    else:
+        raise ValueError("Invalid noise type. Choose from 'white', 'pink', 'brown', 'blue', 'violet', 'grey'.")
+
+
+def add_noise_to_signal(audio_signal, noise_type, desired_snr_db, fs=44100):
+    """
+    Add noise to a given audio_signal to achieve a specified SNR.
+
+    Parameters:
+    audio_signal (np.ndarray): Input audio_signal to which noise is to be added.
+    noise_type (str): Type of noise to add ('white', 'pink', 'brown', 'blue', 'violet', 'grey').
+    desired_snr_db (float): Desired SNR in decibels.
+    fs (int): Sampling frequency, default is 44100 Hz.
+
+    Returns:
+    np.ndarray: audio_signal with added noise.
+    """
+    # Generate noise
+    noise = generate_noise(noise_type, len(audio_signal), fs)
+
+    # Calculate the power of the audio_signal and the noise
+    audio_signal_power = np.mean(audio_signal ** 2)
+    noise_power = np.mean(noise ** 2)
+
+    # Calculate the necessary scaling factor for the noise to achieve the desired SNR
+    desired_snr_linear = 10 ** (desired_snr_db / 10)
+    scaling_factor = np.sqrt(audio_signal_power / (desired_snr_linear * noise_power))
+
+    # Scale and add the noise to the audio_signal
+    noisy_audio_signal = audio_signal + scaling_factor * noise
+    return noisy_audio_signal
+
 
 if __name__ == "__main__":
     pass
