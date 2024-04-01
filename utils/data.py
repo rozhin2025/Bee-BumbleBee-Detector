@@ -159,7 +159,9 @@ def create_dataset_from_annotations(annotations=None, files=None, sr=None, frame
         x, _ = librosa.load(rec_path, sr=sr)
         x = segmentation(x, sr, frame_length, hop_length)
         selected_indices = np.sort(rec_annotations[rec_annotations.is_selected].sample_idx.values)
-        return x[selected_indices, ...]
+        x = x[selected_indices, ...]
+        x = normalize(x)
+        return x
     
     if annotations is None:
         if (files is None) or (sr is None) or (frame_length is None) or (hop_length is None):
@@ -170,7 +172,6 @@ def create_dataset_from_annotations(annotations=None, files=None, sr=None, frame
     
     x = np.concatenate(list(map(load_selected_samples, recordings)), axis=0)
     annotations.sort_values(['recording', 'sample_idx'], key=lambda x: x.apply(lambda x: recordings.index(x)) if x.name == 'recording' else x, inplace=True)
-    x = normalize(x)
     y = annotations[annotations.is_selected].is_bee.values
     return x, y, annotations
 
