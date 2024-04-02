@@ -161,11 +161,6 @@ cython_debug/
 
 *.wav
 *.json
-*.npy
-*.npz
-*.csv
-*.txt
-*.h5
 
 all_training_data/*
 bioacoustics/*
