@@ -160,9 +160,6 @@ cython_debug/
 #.idea/
 
 *.npy
-*.npz
-*.pkl
-*.h5
 *.wav
 *.json
 
