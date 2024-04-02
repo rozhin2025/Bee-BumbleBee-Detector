@@ -160,7 +160,6 @@ cython_debug/
 #.idea/
 
 *.wav
-*.json
 
 all_training_data/*
 bioacoustics/*
